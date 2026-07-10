@@ -1,0 +1,12 @@
+# 오디오/영상/모델 데이터 - 절대 커밋 금지
+*.wav
+*.mp3
+*.flac
+*.mp4
+*.mkv
+*.pth
+*.ckpt
+*.safetensors
+*.npz
+__pycache__/
+*.pyc
