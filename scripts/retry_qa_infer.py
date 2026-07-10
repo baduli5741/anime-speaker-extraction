@@ -26,6 +26,7 @@ MANUAL_REF = {
 }
 MAX_TRIES = 6
 RATIO_THRESH = 0.3  # 시작0.4s RMS / 전체RMS. 이 미만이면 "생성스킵형"(앞부분 무음/누락)으로 판정
+MIN_DUR = 4.0  # 이보다 짧으면 "조기절단형"(문장을 다 안 읽고 끊김)으로 판정 - 문장 길이에 맞춰 조정
 
 meta = os.path.expanduser("~/subs_out_all/final/metadata_all.csv")
 text_of = {r["clip"]: r["jp_text"] for r in csv.DictReader(open(meta, encoding="utf-8"))}
@@ -49,22 +50,24 @@ def synth_once(sov_path, gpt_path, ref_wav, ref_text, inp_refs, target):
 
 def synth_with_retry(label, sov_path, gpt_path, ref_wav, ref_text, inp_refs, target):
     # GPT 자기회귀 생성 자체가 확률적 샘플링이라 같은 입력도 실행마다 결과가 다를 수 있음
-    # (레퍼런스가 깨끗해도 가끔 문장 앞부분을 스킵) - 그래서 사후 QA + 재시도가 필요
+    # (레퍼런스가 깨끗해도 가끔 문장 앞부분을 스킵하거나, 문장을 다 안읽고 조기절단) - 그래서 사후 QA + 재시도가 필요
     best = None
     for attempt in range(1, MAX_TRIES + 1):
         sr, audio = synth_once(sov_path, gpt_path, ref_wav, ref_text, inp_refs, target)
         audio = np.asarray(audio, dtype=np.float64)
+        dur = len(audio) / sr
         win04 = int(0.4 * sr)
         start_rms = float(np.sqrt(np.mean(audio[:win04] ** 2)))
         overall_rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
         ratio = start_rms / overall_rms if overall_rms > 0 else 0.0
-        ok = ratio >= RATIO_THRESH
-        print(f"  [{label}] try{attempt}: dur={len(audio)/sr:.2f}s ratio={ratio:.3f} {'OK' if ok else 'RETRY'}")
-        if best is None or ratio > best[2]:
-            best = (sr, audio, ratio)
+        ok = ratio >= RATIO_THRESH and dur >= MIN_DUR
+        print(f"  [{label}] try{attempt}: dur={dur:.2f}s ratio={ratio:.3f} {'OK' if ok else 'RETRY'}")
+        # 채택 우선순위: 길이부터 통과한 것 중 ratio가 제일 좋은 것
+        if best is None or (dur >= MIN_DUR and (best[3] < MIN_DUR or ratio > best[2])):
+            best = (sr, audio, ratio, dur)
         if ok:
             return sr, audio, attempt
-    print(f"  [{label}] {MAX_TRIES}번 다 기준미달, 그중 제일 나은 것 채택(ratio={best[2]:.3f})")
+    print(f"  [{label}] {MAX_TRIES}번 다 기준미달, 그중 제일 나은 것 채택(dur={best[3]:.2f}s ratio={best[2]:.3f})")
     return best[0], best[1], MAX_TRIES
 
 for char, name_ko in NAME_KO.items():
