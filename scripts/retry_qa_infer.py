@@ -54,11 +54,14 @@ def synth_with_retry(label, sov_path, gpt_path, ref_wav, ref_text, inp_refs, tar
     best = None
     for attempt in range(1, MAX_TRIES + 1):
         sr, audio = synth_once(sov_path, gpt_path, ref_wav, ref_text, inp_refs, target)
-        audio = np.asarray(audio, dtype=np.float64)
+        # audio는 get_tts_wav가 돌려주는 원본 int16 배열 - 절대 재대입/변형하지 않고 그대로 저장에 씀.
+        # 계산용으로만 float64 사본(calc)을 따로 만듦 - 예전에 audio 자체를 float64로 덮어써서
+        # sf.write가 값(수천 단위)을 정규화된 [-1,1] 샘플로 오인, 파일 자체가 귀 아픈 클리핑으로 저장되던 버그가 있었음.
+        calc = audio.astype(np.float64)
         dur = len(audio) / sr
         win04 = int(0.4 * sr)
-        start_rms = float(np.sqrt(np.mean(audio[:win04] ** 2)))
-        overall_rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
+        start_rms = float(np.sqrt(np.mean(calc[:win04] ** 2)))
+        overall_rms = float(np.sqrt(np.mean(calc ** 2))) if len(calc) else 0.0
         ratio = start_rms / overall_rms if overall_rms > 0 else 0.0
         ok = ratio >= RATIO_THRESH and dur >= MIN_DUR
         print(f"  [{label}] try{attempt}: dur={dur:.2f}s ratio={ratio:.3f} {'OK' if ok else 'RETRY'}")
