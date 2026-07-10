@@ -73,6 +73,18 @@ def synth_with_retry(label, sov_path, gpt_path, ref_wav, ref_text, inp_refs, tar
     print(f"  [{label}] {MAX_TRIES}번 다 기준미달, 그중 제일 나은 것 채택(dur={best[3]:.2f}s ratio={best[2]:.3f})")
     return best[0], best[1], MAX_TRIES
 
+def safety_normalize(audio, target_peak_frac=0.85):
+    # 방어적 하드 리미터: 원인 불문하고 진폭이 과도하면 저장 직전에 강제로 낮춤(귀 보호용).
+    # 9-9 저장버그처럼 생각 못한 경로로 진폭이 튀는 사고가 재발해도 최소한 청취자 귀는 보호함.
+    peak = float(np.max(np.abs(audio)))
+    if peak <= 0:
+        return audio
+    scale_ref = 32768.0 if peak > 10 else 1.0
+    target = target_peak_frac * scale_ref
+    if peak > target:
+        audio = (audio.astype(np.float64) * (target / peak)).astype(audio.dtype)
+    return audio
+
 for char, name_ko in NAME_KO.items():
     sov_path = sorted(glob.glob(f"SoVITS_weights_v2Pro/{char}_e8_s*.pth"))[-1]
     gpt_path = f"GPT_weights_v2Pro/{char}-e15.ckpt"
@@ -91,9 +103,9 @@ for char, name_ko in NAME_KO.items():
     print(f"=== {char} ({name_ko}) ref={os.path.basename(ref_wav)} ===")
 
     sr, audio, tries = synth_with_retry(f"{char}_single", sov_path, gpt_path, ref_wav, ref_text, [], target)
-    sf.write(os.path.join(OUT, f"{char}_single_retry.wav"), audio, sr)
+    sf.write(os.path.join(OUT, f"{char}_single_retry.wav"), safety_normalize(audio), sr)
 
     sr, audio, tries = synth_with_retry(f"{char}_multi", sov_path, gpt_path, ref_wav, ref_text, multi, target)
-    sf.write(os.path.join(OUT, f"{char}_multi_retry.wav"), audio, sr)
+    sf.write(os.path.join(OUT, f"{char}_multi_retry.wav"), safety_normalize(audio), sr)
 
 print("DONE ALL")
