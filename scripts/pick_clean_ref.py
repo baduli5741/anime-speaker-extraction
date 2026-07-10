@@ -1,5 +1,15 @@
-import os, re, sys, glob, bisect
+import os, re, sys, glob, bisect, csv
 import soundfile as sf
+
+MUSIC_RE = re.compile(r"♪")
+
+_TEXT_CACHE = None
+def text_of_clip(rel):
+    global _TEXT_CACHE
+    if _TEXT_CACHE is None:
+        meta = os.path.expanduser("~/subs_out_all/final/metadata_all.csv")
+        _TEXT_CACHE = {r["clip"]: r["jp_text"] for r in csv.DictReader(open(meta, encoding="utf-8"))}
+    return _TEXT_CACHE.get(rel, "")
 
 def ts(t):
     h, m, rest = t.split(":")
@@ -34,6 +44,10 @@ def pick(char, min_dur=3.0, max_dur=8.0, safe_margin=0.3, topn=5):
         dur = e - s
         if not (min_dur <= dur <= max_dur):
             continue
+        rel = char + "/" + fn
+        text = text_of_clip(rel)
+        if not text.strip() or MUSIC_RE.search(text):
+            continue  # 음악(♪)/빈텍스트 클립은 레퍼런스로 못 씀
         if ep not in cache:
             cache[ep] = all_bounds(ep)
         starts, ends = cache[ep]
